@@ -1,0 +1,13 @@
+{
+  "run_name": "storytelling",
+  "model": {"auto_vocab": false, "vocab_size": 151936},
+  "tokenizer": {"name": "hf", "path": "Qwen/Qwen2.5-0.5B", "eos_token": "<|endoftext|>"},
+  "data": {
+    "source": {"kind": "hf_dataset",
+               "params": {"path": "roneneldan/TinyStories", "split": "train", "text_field": "text"}},
+    "cache_dir": "data_cache/stories", "seq_len": 512,
+    "max_train_tokens": 164000000, "val_tokens": 1000000, "min_chars": 100
+  },
+  "train": {"output_dir": "runs/stories"},
+  "generation": {"probe_prompts": ["Once upon a time", "One day, a little girl named"]}
+}

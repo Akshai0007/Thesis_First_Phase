@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwenlab"
-version = "0.1.0"
-description = "Modular from-scratch pretraining + multitask SFT pipeline for Qwen-style decoder LMs"
+version = "0.3.0"
+description = "Modular from-scratch causal-LM pretraining pipeline for Qwen-style decoder LMs"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.3", "numpy", "transformers>=4.44", "tokenizers", "datasets", "safetensors"]
+dependencies = ["torch>=2.3", "numpy", "transformers>=4.44", "tokenizers", "datasets", "safetensors", "sentencepiece"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

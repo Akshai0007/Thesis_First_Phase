@@ -70,3 +70,22 @@ class FIMTask:
         on the data-loading side."""
         return build_fim_example(token_ids, self.fim_prefix_id, self.fim_middle_id,
                                   self.fim_suffix_id, self.spm_rate, self.rng)
+
+
+def fim_arrays(windows, seq_len: int, fim_prefix_id: int, fim_middle_id: int, fim_suffix_id: int,
+               spm_rate: float = 0.5, seed: int = 0):
+    """Turn packed causal-LM windows (each seq_len+1 token ids) into fill-in-the-middle training arrays.
+
+    Each window is cut to seq_len+1-3 tokens so that, after the 3 marker tokens are added, it is again exactly
+    seq_len+1 tokens long (so FIM batches have the same shape as ordinary batches, no padding).
+    The cut points are drawn from a generator seeded by the window's own content, so the same window always
+    gives the same example (resume-safe, reproducible) without any shared random state.
+    Returns three lists of lists: inputs (seq_len), labels (seq_len), loss_mask (seq_len, True on the middle only)."""
+    xs, ys, ms = [], [], []
+    for w in windows:
+        toks = [int(t) for t in w[:seq_len + 1 - 3]]
+        rng = random.Random((toks[0] * 1_000_003 + toks[len(toks) // 2] * 8_191 + toks[-1]) % (2 ** 31) + seed)
+        ids, mask = build_fim_example(toks, fim_prefix_id, fim_middle_id, fim_suffix_id, spm_rate, rng)
+        assert len(ids) == seq_len + 1, f"FIM example has {len(ids)} tokens, expected {seq_len + 1}"
+        xs.append(ids[:-1]); ys.append(ids[1:]); ms.append(mask[1:])
+    return xs, ys, ms

@@ -1,0 +1,14 @@
+{
+  "run_name": "malayalam",
+  "_note": "Template: put your trained Unigram-32k .model at tokenizers/malayalam_unigram32k.model and check the dataset id/params before use.",
+  "tokenizer": {"name": "sentencepiece", "path": "tokenizers/malayalam_unigram32k.model"},
+  "data": {
+    "source": {"kind": "hf_dataset",
+               "params": {"path": "ai4bharat/sangraha", "data_dir": "verified/mal", "split": "train", "text_field": "text"}},
+    "cache_dir": "data_cache/malayalam", "seq_len": 512,
+    "max_train_tokens": 200000000, "val_tokens": 1000000,
+    "normalizer": "malayalam", "script": "malayalam", "min_script_ratio": 0.5
+  },
+  "train": {"output_dir": "runs/malayalam", "export_hf": true},
+  "generation": {"probe_prompts": ["കേരളത്തിന്റെ തലസ്ഥാനം"], "max_sentences": 2}
+}

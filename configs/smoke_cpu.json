@@ -1,0 +1,58 @@
+{
+  "run_name": "smoke_cpu",
+  "model": {
+    "hidden_size": 64,
+    "intermediate_size": 128,
+    "num_layers": 2,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "loss_chunk_tokens": 0,
+    "vocab_pad_multiple": 8
+  },
+  "init": {
+    "seed": 1,
+    "truncate_sigma": 3.0
+  },
+  "tokenizer": {
+    "name": "bytes",
+    "path": ""
+  },
+  "data": {
+    "source": {
+      "kind": "text_files",
+      "params": {
+        "pattern": "sample_data/stories.jsonl"
+      }
+    },
+    "cache_dir": "runs/smoke_cache",
+    "seq_len": 64,
+    "val_tokens": 4000,
+    "min_chars": 100
+  },
+  "train": {
+    "output_dir": "runs/smoke_cpu",
+    "max_steps": 150,
+    "micro_batch_size": 8,
+    "grad_accum_steps": 1,
+    "lr": 0.003,
+    "warmup_steps": 10,
+    "schedule": "wsd",
+    "decay_fraction": 0.2,
+    "precision": "fp32",
+    "log_every": 10,
+    "eval_every": 50,
+    "save_every": 50,
+    "keep_last": 1,
+    "time_budget_minutes": null
+  },
+  "eval": {
+    "batch_size": 8
+  },
+  "generation": {
+    "max_new_tokens": 40,
+    "max_new_tokens_cap": 48,
+    "probe_prompts": [
+      "One morning, Mira walked"
+    ]
+  }
+}

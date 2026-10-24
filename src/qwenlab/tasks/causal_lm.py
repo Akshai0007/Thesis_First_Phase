@@ -7,6 +7,7 @@ everything before it. No architecture change needed, no loss masking needed
 (every position contributes to the loss) -- this is what "pretraining" means
 for a model shaped like Qwen.
 """
+import numpy as np
 import torch
 
 from ..registry import TASKS
@@ -45,6 +46,7 @@ class CausalLMTask:
         return pack_tokens(documents, self.seq_len, self.eos_id)
 
     def make_batch(self, windows: list, device: str = "cpu"):
-        arr = torch.tensor(windows, dtype=torch.long)
+        # accepts a list of lists OR numpy rows (the memory-light packed dataset)
+        arr = torch.as_tensor(np.asarray(windows), dtype=torch.long)
         input_ids, labels = arr[:, :-1].to(device), arr[:, 1:].to(device)
         return input_ids, labels, None

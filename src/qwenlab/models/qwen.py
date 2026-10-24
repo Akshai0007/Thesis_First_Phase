@@ -173,6 +173,9 @@ class QwenForCausalLM(nn.Module):
 
     def forward(self, input_ids, labels=None, attn_mask=None, loss_mask=None):
         b, s = input_ids.shape
+        if s > self.cfg.max_seq_len:
+            raise ValueError(f"sequence length {s} is longer than the model's context window "
+                             f"({self.cfg.max_seq_len}, the length it is trained for); shorten the input")
         x = self.embed_tokens(input_ids)
         cos, sin = self.rope_cos[:s].to(x.dtype), self.rope_sin[:s].to(x.dtype)
         for layer in self.layers:
@@ -182,9 +185,16 @@ class QwenForCausalLM(nn.Module):
         if labels is None:
             return self.lm_head(x), None
 
-        loss = self._chunked_lm_loss(x, labels, loss_mask) if self.cfg.loss_chunk_tokens else \
-            F.cross_entropy(self.lm_head(x).reshape(-1, self.cfg.vocab_size), labels.reshape(-1),
-                             ignore_index=-100)
+        if self.cfg.loss_chunk_tokens:
+            loss = self._chunked_lm_loss(x, labels, loss_mask)
+        else:
+            # Positions outside the mask (e.g. the prompt in SFT) are turned
+            # into the ignore label -100, exactly as the chunked path does.
+            # Previously this branch skipped loss_mask silently.
+            if loss_mask is not None:
+                labels = labels.masked_fill(~loss_mask.bool(), -100)
+            loss = F.cross_entropy(self.lm_head(x).reshape(-1, self.cfg.vocab_size),
+                                   labels.reshape(-1), ignore_index=-100)
         return None, loss
 
     def _chunked_lm_loss(self, x, labels, loss_mask):
@@ -211,7 +221,7 @@ class QwenForCausalLM(nn.Module):
             logits_c = self.lm_head(xc)
             if mask_flat is not None:
                 mc = mask_flat[i:i + chunk]
-                lc = lc.masked_fill(~mc, -100)
+                lc = lc.masked_fill(~mc.bool(), -100)
             per_tok = F.cross_entropy(logits_c, lc, ignore_index=-100, reduction="sum")
             n_valid = (lc != -100).sum()
             total_loss = total_loss + per_tok

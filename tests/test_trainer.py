@@ -159,3 +159,25 @@ def test_gradient_accumulation_matches_one_large_batch(tmp_output_dir):
     for n in grad_accum:
         assert torch.allclose(grad_accum[n], grad_single[n], atol=1e-5, rtol=1e-3), \
             f"{n}: accumulated grad diverges from single-large-batch grad"
+
+def test_save_checkpoint_is_atomic(tmp_output_dir):
+    """A crash while writing must leave the previous progress.pt readable, and
+    a successful save must leave no .tmp behind."""
+    import os
+    from unittest import mock
+    cfg = TrainConfig(output_dir=tmp_output_dir, max_steps=10, save_every=5,
+                      resume=False, precision="fp32")
+    trainer = Trainer(_tiny_model(), cfg, device="cpu")
+    ckpt_dir = Path(tmp_output_dir) / "checkpoints"
+
+    trainer.save_checkpoint(5)                                   # good save
+    assert torch.load(ckpt_dir / "progress.pt", weights_only=False)["step"] == 5
+    assert not (ckpt_dir / "progress.pt.tmp").exists()
+    assert (ckpt_dir / "step_5.pt").exists()                      # named snapshot via link/copy
+
+    # Simulate the process dying right before the rename: the temp file has
+    # been written, but the target must still be the old, intact checkpoint.
+    with mock.patch.object(os, "replace", side_effect=RuntimeError("KILLED")):
+        with pytest.raises(RuntimeError, match="KILLED"):
+            trainer.save_checkpoint(6)
+    assert torch.load(ckpt_dir / "progress.pt", weights_only=False)["step"] == 5

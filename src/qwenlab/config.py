@@ -35,6 +35,9 @@ class ModelConfig:
     gradient_checkpointing: bool = False
     loss_chunk_tokens: int = 4096         # chunked LM-head loss (151k vocab logits are huge); 0 = off
     z_loss_coef: float = 0.0
+    vocab_pad_multiple: int = 128         # used when auto_vocab is True
+    auto_vocab: bool = True               # True: vocab_size = len(tokenizer) rounded up to vocab_pad_multiple (new language).
+                                          # False: use vocab_size exactly as written (e.g. 151936 to match official Qwen2.5 / earlier checkpoints)
 
     def __post_init__(self):
         assert self.hidden_size % self.num_heads == 0, "hidden_size must be divisible by num_heads"
@@ -97,14 +100,19 @@ class SourceConfig:
 
 @dataclass
 class PretrainDataConfig:
+    """Next-word-prediction data: continuous text, packed into windows of `seq_len`+1 tokens.
+    seq_len is THE training context window: generation is limited to it (inference/generate.py)."""
     source: SourceConfig = field(default_factory=SourceConfig)
     cache_dir: str = "data_cache/pretrain"
-    seq_len: int = 1024
-    max_train_tokens: Optional[int] = None
-    val_tokens: int = 2_000_000
-    shard_tokens: int = 100_000_000
-    fim_rate: float = 0.0                 # fraction of windows turned into fill-in-the-middle samples
-    fim_spm_rate: float = 0.5             # of those, fraction using SPM ordering (rest PSM)
+    seq_len: int = 512
+    max_train_tokens: Optional[int] = None    # required for streaming hf_dataset sources
+    val_tokens: int = 1_000_000               # at most this many held-out validation tokens ...
+    max_val_fraction: float = 0.1             # ... and never more than this share of the text (small datasets still work)
+    min_chars: int = 200                      # shorter documents are dropped
+    drop_qa_format: bool = True               # drop documents with chat/FIM markers or Question:/Answer: layout
+    normalizer: str = "default"               # text cleaning, by name: "default" | "malayalam" (data/normalizers.py)
+    script: str = ""                          # optional script filter, e.g. "malayalam"
+    min_script_ratio: float = 0.0             # drop documents with a smaller share of letters in `script`
 
 
 @dataclass
@@ -118,8 +126,11 @@ class TaskMixEntry:
 @dataclass
 class TrainConfig:
     output_dir: str = "runs/exp"
-    stage: str = "pretrain"               # "pretrain" (packed stream) | "sft" (task mixture)
-    max_steps: int = 1000
+    stage: str = "pretrain"               # only "pretrain" (continuous text) is wired into scripts/train.py
+    max_steps: int = 1000                 # the PLANNED length: the learning-rate schedule is built from this
+    schedule_start_step: int = 0          # >0: the schedule restarts here (new warmup/stable/decay over the steps that remain),
+                                          # e.g. continuing a run that already decayed, without a jump back to the old peak
+    stop_at_step: Optional[int] = None    # pause cleanly (save + eval) at this step; the schedule is unchanged. null = run to max_steps
     micro_batch_size: int = 8
     grad_accum_steps: int = 1
     lr: float = 6e-4
@@ -141,22 +152,31 @@ class TrainConfig:
     save_every: int = 500
     keep_last: int = 2
     resume: bool = True
-    init_from: Optional[str] = None       # checkpoint dir to start (weights only) e.g. SFT from a pretrain ckpt
     time_budget_minutes: Optional[float] = None   # stop cleanly before a session limit (Kaggle)
-    peak_tflops: float = 0.0              # for MFU logging; 0 disables
+    hub_repo_id: Optional[str] = None     # e.g. "user/my-run": back up / restore checkpoints on the Hugging Face Hub (needs HF_TOKEN)
+    hub_upload_every_n_saves: int = 4     # full checkpoints are ~6 GB each: upload rarely (and always at the end)
+    export_hf: bool = False               # at the end, also write hf_model/ (Hugging Face Qwen2 format, safetensors)
     seed: int = 42
 
 
 @dataclass
 class EvalConfig:
-    mc_tasks: List[str] = field(default_factory=lambda: ["hellaswag", "arc_easy", "arc_challenge", "piqa"])
-    mc_limit: Optional[int] = 500
-    ppl_sets: List[str] = field(default_factory=lambda: ["wikitext103"])
-    gen_tasks: List[str] = field(default_factory=list)
-    gen_limit: int = 100
-    reference: str = "Qwen/Qwen2.5-0.5B"
-    batch_size: int = 16
-    max_seq_len: int = 1024
+    """Held-out evaluation: cross-entropy loss AND perplexity on the validation windows."""
+    eval_at_start: bool = True            # also score the untrained model (loss ~ ln(vocab), perplexity ~ vocab)
+    batch_size: int = 8                   # validation micro-batch size
+
+
+@dataclass
+class GenerationConfig:
+    """Guard-rails used by scripts/generate.py and the training-time sample probes."""
+    max_new_tokens: int = 48
+    max_new_tokens_cap: int = 64          # hard ceiling whatever the caller asks for (~2 sentences)
+    temperature: float = 0.0              # 0 = greedy
+    top_k: Optional[int] = None
+    repetition_penalty: float = 1.0
+    no_repeat_ngram_size: int = 0
+    max_sentences: Optional[int] = 2
+    probe_prompts: List[str] = field(default_factory=lambda: ["The capital of France is", "Once upon a time"])
 
 
 @dataclass
@@ -166,9 +186,10 @@ class ExperimentConfig:
     init: InitConfig = field(default_factory=InitConfig)
     tokenizer: TokenizerConfig = field(default_factory=TokenizerConfig)
     data: PretrainDataConfig = field(default_factory=PretrainDataConfig)
-    tasks: List[TaskMixEntry] = field(default_factory=list)   # used when train.stage == "sft"
+    tasks: List[TaskMixEntry] = field(default_factory=list)   # reserved for the later SFT stage (not used by scripts/train.py)
     train: TrainConfig = field(default_factory=TrainConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
 
 
 # ----------------------------------------------------------------------------- (de)serialisation
@@ -241,13 +262,17 @@ def load_config(paths, overrides: Optional[List[str]] = None) -> ExperimentConfi
     merged: Dict[str, Any] = {}
     for p in paths:
         with open(p) as f:
-            merged = _deep_merge(merged, json.load(f))
+            raw = json.load(f)
+        merged = _deep_merge(merged, {k: v for k, v in raw.items() if not k.startswith("_")})   # "_note" keys = comments
     apply_overrides(merged, overrides or [])
     return from_dict(ExperimentConfig, merged)
 
 
 def to_dict(cfg) -> Dict[str, Any]:
-    return asdict(cfg)
+    d = asdict(cfg)
+    if isinstance(d.get("model"), dict):
+        d["model"].pop("head_dim", None)       # derived from hidden_size // num_heads, not a settable field
+    return d
 
 
 def save_config(cfg, path: str):

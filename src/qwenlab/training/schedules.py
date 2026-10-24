@@ -11,6 +11,7 @@ requires -- relevant here since Kaggle session limits make "how many steps
 will we actually get" a real unknown, not just a hyperparameter choice.
 """
 import math
+import types
 
 from ..registry import SCHEDULES
 
@@ -61,4 +62,10 @@ def wsd(step: int, cfg) -> float:
 
 def lr_multiplier(step: int, train_cfg) -> float:
     fn = SCHEDULES.get(train_cfg.schedule)
+    start = int(getattr(train_cfg, "schedule_start_step", 0) or 0)
+    if start > 0:
+        # restart: the same schedule, measured from `start` over the remaining steps
+        local = types.SimpleNamespace(warmup_steps=train_cfg.warmup_steps, max_steps=train_cfg.max_steps - start,
+                                      min_lr_ratio=train_cfg.min_lr_ratio, decay_fraction=train_cfg.decay_fraction)
+        return fn(max(step - start, 0), local)
     return fn(step, train_cfg)

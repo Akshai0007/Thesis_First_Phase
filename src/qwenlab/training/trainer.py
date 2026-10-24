@@ -9,11 +9,16 @@ causal_lm pretraining, an SFT task, or FIM. That independence is what makes
 "swap the task without touching the trainer" actually true rather than
 aspirational.
 """
+import os
+import shutil
 import time
 from pathlib import Path
 
 import torch
 
+import json
+
+from ..evaluation.perplexity import evaluate_lm
 from ..training.schedules import lr_multiplier
 
 
@@ -70,6 +75,8 @@ class Trainer:
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.start_step = 0
         self.start_time = None
+        self.metrics_path = Path(train_cfg.output_dir) / "metrics.jsonl"   # one JSON line per log / eval event
+        self.last_eval = None
 
         if train_cfg.resume:
             self._maybe_resume()
@@ -81,7 +88,9 @@ class Trainer:
     def _maybe_resume(self):
         p = self._progress_path()
         if p.exists():
-            ckpt = torch.load(p, map_location=self.device, weights_only=False)
+            # Load on CPU first: loading straight to GPU holds checkpoint + model +
+            # optimizer copy at once (~12GB for this model on a 15GB T4).
+            ckpt = torch.load(p, map_location="cpu", weights_only=False)
             self.model.load_state_dict(ckpt["model_state_dict"])
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
             if self.use_scaler and "scaler_state_dict" in ckpt:
@@ -90,6 +99,10 @@ class Trainer:
             print(f"[resume] loaded {p}, continuing from step {self.start_step}")
 
     def save_checkpoint(self, step: int, extra: dict = None, final: bool = False):
+        for name, prm in self.model.named_parameters():
+            if not bool(torch.isfinite(prm).all()):
+                raise FloatingPointError(f"parameter {name} contains NaN/inf at step {step}: NOT saving, "
+                                         f"the previous checkpoint stays untouched")
         payload = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -101,10 +114,25 @@ class Trainer:
         if extra:
             payload.update(extra)
 
-        torch.save(payload, self._progress_path())  # always overwrite the resumable "latest"
+        # Write to a temp file, flush to disk, then rename over the target.
+        # os.replace is atomic, so a kill mid-write leaves the previous good
+        # progress.pt untouched (a half-written .tmp is simply overwritten next time).
+        progress = self._progress_path()
+        tmp = progress.with_suffix(".pt.tmp")
+        with open(tmp, "wb") as f:
+            torch.save(payload, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, progress)
+
         if final or (self.cfg.save_every and step % self.cfg.save_every == 0):
             named = self.ckpt_dir / f"step_{step}.pt"
-            torch.save(payload, named)
+            if named.exists():
+                named.unlink()
+            try:
+                os.link(progress, named)        # hard link: instant, no extra disk
+            except OSError:
+                shutil.copyfile(progress, named)  # filesystem without hard links
             self._prune_old_checkpoints()
 
     def _prune_old_checkpoints(self):
@@ -156,7 +184,7 @@ class Trainer:
             return False
         return (time.time() - self.start_time) / 60.0 >= self.cfg.time_budget_minutes
 
-    def fit(self, train_batch_fn, val_batch_fn=None, on_log=None, on_eval=None):
+    def fit(self, train_batch_fn, val_batch_fn=None, on_log=None, on_eval=None, on_checkpoint=None):
         """train_batch_fn() -> (input_ids, labels, loss_mask), called
         grad_accum_steps times per training_step. val_batch_fn, if given, is
         called cfg.eval_batches times at each eval_every interval.
@@ -166,8 +194,13 @@ class Trainer:
         self.start_time = time.time()
         step = self.start_step
         stopped_early = False
+        stop_at = self.cfg.stop_at_step
+        if stop_at is not None and stop_at <= self.start_step:
+            print(f"[stop_at_step] {stop_at} is not after the resume step {self.start_step}: nothing to train.")
+        end = self.cfg.max_steps if stop_at is None else min(self.cfg.max_steps, stop_at)
+        last_saved = None
 
-        while step < self.cfg.max_steps:
+        while step < end:
             if self.time_budget_exceeded():
                 print(f"[time budget] {self.cfg.time_budget_minutes} min reached at step {step}, "
                       f"stopping cleanly and checkpointing.")
@@ -179,12 +212,15 @@ class Trainer:
             loss, grad_norm = self.training_step(batches)
             step += 1
 
-            if on_log and step % self.cfg.log_every == 0:
-                on_log(step, loss, lr, grad_norm)
+            if step % self.cfg.log_every == 0:
+                self._log_metric({"step": step, "train_loss": loss, "lr": lr, "grad_norm": grad_norm})
+                if on_log:
+                    on_log(step, loss, lr, grad_norm)
 
-            if val_batch_fn and on_eval and step % self.cfg.eval_every == 0:
-                val_loss = self._evaluate(val_batch_fn)
-                on_eval(step, val_loss)
+            if val_batch_fn and step % self.cfg.eval_every == 0:
+                val_loss = self.evaluate(val_batch_fn, step=step)
+                if on_eval:
+                    on_eval(step, val_loss)
 
             # Checkpoint only every save_every steps, NOT every step. Caught by
             # manual review before any Kaggle run: a checkpoint for this
@@ -200,22 +236,30 @@ class Trainer:
             # actually active -- re-check it if the target model changes again.
             if self.cfg.save_every and step % self.cfg.save_every == 0:
                 self.save_checkpoint(step)
+                last_saved = step
+                if on_checkpoint:
+                    on_checkpoint(step, self._progress_path(), False)
 
-        self.save_checkpoint(step, final=True)
+        stopped_early = stopped_early or step < self.cfg.max_steps      # paused (time budget / stop_at_step), not finished
+        if last_saved != step:                      # no second copy of a checkpoint that was just written
+            self.save_checkpoint(step, final=True)
+        if on_checkpoint:
+            on_checkpoint(step, self._progress_path(), True)
         return {"final_step": step, "stopped_early": stopped_early}
 
-    @torch.no_grad()
-    def _evaluate(self, val_batch_fn):
-        self.model.eval()
-        losses = []
-        for _ in range(self.cfg.eval_batches):
-            input_ids, labels, loss_mask = val_batch_fn()
-            input_ids, labels = input_ids.to(self.device), labels.to(self.device)
-            if loss_mask is not None:
-                loss_mask = loss_mask.to(self.device)
-            with torch.autocast(device_type=self.device if self.device != "mps" else "cpu",
-                                 dtype=self.dtype, enabled=self.dtype != torch.float32):
-                _, loss = self.model(input_ids, labels=labels, loss_mask=loss_mask)
-            losses.append(loss.item())
-        self.model.train()
-        return sum(losses) / len(losses)
+    def _log_metric(self, row: dict):
+        self.metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.metrics_path, "a") as f:
+            f.write(json.dumps(row) + "\n")
+
+    def evaluate(self, val_batch_fn, step: int = None) -> float:
+        """Held-out loss AND perplexity (token-weighted). Prints and logs both; returns the loss
+        (the full result is kept in self.last_eval)."""
+        step = self.start_step if step is None else step
+        res = evaluate_lm(self.model, val_batch_fn, self.cfg.eval_batches, self.device, self.dtype)
+        self.last_eval = res
+        print(f"[eval] step {step}: val loss {res['loss']:.4f} | perplexity {res['perplexity']:.2f} | {res['tokens']:,} tokens")
+        self._log_metric({"step": step, "val_loss": res["loss"], "val_perplexity": res["perplexity"], "val_tokens": res["tokens"]})
+        return res["loss"]
+
+    _evaluate = evaluate      # old name kept so existing callers keep working

@@ -1,0 +1,13 @@
+{
+  "run_name": "english",
+  "model": {"auto_vocab": false, "vocab_size": 151936},
+  "tokenizer": {"name": "hf", "path": "Qwen/Qwen2.5-0.5B", "eos_token": "<|endoftext|>"},
+  "data": {
+    "source": {"kind": "hf_dataset",
+               "params": {"path": "HuggingFaceFW/fineweb-edu", "name": "sample-10BT", "split": "train", "text_field": "text"}},
+    "cache_dir": "data_cache/english", "seq_len": 512,
+    "max_train_tokens": 164000000, "val_tokens": 1000000
+  },
+  "train": {"output_dir": "runs/english", "export_hf": true},
+  "generation": {"probe_prompts": ["The capital of France is", "In science, the most important idea is", "Once upon a time"]}
+}

@@ -59,8 +59,8 @@ def main():
         print("WARNING: no GPU detected -- confirm the Kaggle notebook's Accelerator is set to GPU "
               "(T4 x2 or P100) before trusting any timing numbers from this run.")
 
-    cfg = QWEN2_5_0_5B
-    cfg.vocab_size = VOCAB_SIZE_FOR_SMOKE_TEST  # smaller placeholder vocab for this feasibility check;
+    import dataclasses
+    cfg = dataclasses.replace(QWEN2_5_0_5B, vocab_size=VOCAB_SIZE_FOR_SMOKE_TEST)   # copy: never edit the shared preset  # smaller placeholder vocab for this feasibility check;
                                                   # real run uses the tokenizer's real 151936
     print(f"\nModel: Qwen2.5-0.5B architecture, hidden={cfg.hidden_size} layers={cfg.num_layers} "
           f"heads={cfg.num_heads}/{cfg.num_kv_heads} head_dim={cfg.head_dim}")
