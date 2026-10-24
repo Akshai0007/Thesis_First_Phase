@@ -1,0 +1,52 @@
+{
+  "run_name": "english_demo",
+  "model": {
+    "hidden_size": 128,
+    "intermediate_size": 384,
+    "num_layers": 2,
+    "num_heads": 4,
+    "num_kv_heads": 2
+  },
+  "tokenizer": {
+    "name": "hf",
+    "path": "Qwen/Qwen2.5-0.5B",
+    "eos_token": "<|endoftext|>"
+  },
+  "data": {
+    "source": {
+      "kind": "hf_dataset",
+      "params": {
+        "path": "HuggingFaceFW/fineweb-edu",
+        "name": "sample-10BT",
+        "split": "train",
+        "text_field": "text"
+      }
+    },
+    "cache_dir": "data_cache/english_demo",
+    "seq_len": 128,
+    "max_train_tokens": 2000000,
+    "val_tokens": 100000
+  },
+  "train": {
+    "output_dir": "runs/english_demo",
+    "max_steps": 200,
+    "micro_batch_size": 4,
+    "grad_accum_steps": 1,
+    "lr": 0.001,
+    "warmup_steps": 20,
+    "precision": "fp32",
+    "log_every": 10,
+    "eval_every": 50,
+    "save_every": 100,
+    "keep_last": 1
+  },
+  "eval": {
+    "batch_size": 8
+  },
+  "generation": {
+    "probe_prompts": [
+      "The capital of France is",
+      "Once upon a time"
+    ]
+  }
+}

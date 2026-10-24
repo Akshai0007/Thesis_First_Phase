@@ -9,6 +9,9 @@ description = "Modular from-scratch causal-LM pretraining pipeline for Qwen-styl
 requires-python = ">=3.10"
 dependencies = ["torch>=2.3", "numpy", "transformers>=4.44", "tokenizers", "datasets", "safetensors", "sentencepiece"]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

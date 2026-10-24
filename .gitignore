@@ -9,3 +9,10 @@ venv/
 htmlcov/
 .ipynb_checkpoints/
 .DS_Store
+
+# outputs of training runs
+runs/
+data_cache/
+*.pt
+*.npy
+*.safetensors

@@ -6,8 +6,8 @@ hard length guard-rails. Every setting lives in `configs/*.json`.
 
 ## Run
 ```bash
-pip install -e .                      # or just run the scripts: they add ./src to the path themselves
-python -m pytest tests -q             # CPU tests, ~5 s
+pip install -e ".[dev]"               # installs the package + pytest (the scripts also run without installing: they add ./src to the path)
+python -m pytest tests -q             # CPU tests, about 1-2 minutes
 
 # offline smoke test, CPU, ~1 minute, no downloads:
 python scripts/train.py --config configs/smoke_cpu.json
@@ -18,6 +18,11 @@ python scripts/train.py --config configs/smoke_cpu.json
 python scripts/train.py --config configs/base.json configs/english.json
 python scripts/evaluate.py --run-dir /kaggle/working/runs/english
 python scripts/generate.py --run-dir /kaggle/working/runs/english --prompt "The capital of France is"
+# does repetition come from running past the training context window? (long generation, inside vs beyond the window)
+python scripts/generate.py --run-dir /kaggle/working/runs/english --prompt "Once upon a time" --repetition-check
+
+# small run with the real Qwen tokenizer and FineWeb-Edu (needs internet; minutes on a GPU) - perplexity should fall from ~vocabulary size:
+python scripts/train.py --config configs/base.json configs/english_demo.json
 ```
 Re-running the same `train.py` command resumes from the last checkpoint (exact data position, no repeats).
 Outputs in the run folder: `experiment.json` (resolved config), `metrics.jsonl` (train loss, lr, val loss, val
@@ -52,8 +57,8 @@ New tokenizer type: add a class with `@TOKENIZERS.register("name")` in `data/tok
 
 Data rules: documents are cleaned, joined with an end-of-text token and cut into windows of `seq_len`+1 tokens.
 Documents containing chat markers, fill-in-the-middle markers or `Question:/Answer:` layouts are dropped and
-counted (see `data_stats` in `results.json`). Validation text is the first documents of the stream and is never
-trained on.
+counted (see `data_stats` in `results.json`). Validation documents are taken from the stream (at most `data.val_tokens`
+and at most `data.max_val_fraction` of the text) and are never trained on.
 
 ## English -> Malayalam checklist
 1. Put the trained Unigram-32k `.model` at `tokenizers/malayalam_unigram32k.model` (or set `tokenizer.path`).
@@ -87,3 +92,8 @@ trained on.
 - `HubBackup.prune_stale_lfs()`: frees old overwritten checkpoint copies on the Hub. It compares `file_oid` (never `oid`),
   deletes nothing unless the current file is positively identified, and prints what it removes.
 - The trainer refuses to save a checkpoint whose weights contain NaN/inf, and does not save the same step twice.
+
+## Status and results
+The pipeline, its tests and the offline smoke run are complete. Perplexity results for the clean continuous-text run
+(20,000 -> 30,000 steps on Kaggle) will be added here when that run has finished; the earlier 20,000-step model was
+trained with the previous pipeline (its last stage mixed in question-answering and other task data).
