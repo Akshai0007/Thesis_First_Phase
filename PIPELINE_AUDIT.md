@@ -13,14 +13,18 @@
 | Inference script | `scripts/generate.py` | See above. |
 
 ## What was run
-- `python -m pytest tests -q`: 92 passed (CPU, includes the Hugging Face equivalence test).
+- `python -m pytest tests -q`: 92 passed on CPU and on the Kaggle T4 (about 47 s), including the Hugging Face equivalence test.
 - Offline smoke run (`configs/smoke_cpu.json`): training, evaluation, generation and resume on a tiny model; perplexity starts near the vocabulary size and falls.
 - Swaps done by config only on the tiny model: dataset, tokenizer (bytes -> SentencePiece), model size, English -> Malayalam sample.
+- On a Kaggle T4 with the real data, tokenizer and Hugging Face Hub (through the notebooks in `kaggle_run/`, which call the package's trainer, data builder, evaluation and export):
+  - baseline evaluation of the three existing models;
+  - a dry run, then the main run from step 21,000 to 30,000 in fp16 (about 3.3 s/step; this session resumed from the run's own checkpoint at step 21,000, written by an earlier session): 18 checkpoint uploads to the Hub, each followed by deletion of exactly one old copy, resume from the uploaded checkpoint, export to `hf_model/` (logit difference 7.8e-05);
+  - final comparison of four models (see README, Results).
 
 ## What has not been run yet
-- A full GPU / fp16 run of the new clean-text pipeline (the 20,000 -> 30,000 step Kaggle run is pending).
-- Downloads of the real datasets and tokenizer from this code (the configs use the same dataset ids and tokenizer as the earlier Kaggle runs).
-- Real Hugging Face Hub uploads (tested against a local stand-in only).
+- `scripts/train.py` itself with `configs/english.json` on a GPU (the Kaggle runs used the same package functions through notebooks). `configs/english_demo.json` is the quick way to check the script end to end with the real tokenizer and dataset (needs internet).
+- A from-scratch 0 -> 30,000 run of the new clean-text pipeline: the 30k model started from the earlier 20,000-step checkpoint.
+- The effect of `repetition_penalty` / `no_repeat_ngram_size` on repetition.
 
 ## Known limits
 - `configs/malayalam.json` is a template: it needs the trained tokenizer file and a check of the dataset id.

@@ -93,7 +93,42 @@ and at most `data.max_val_fraction` of the text) and are never trained on.
   deletes nothing unless the current file is positively identified, and prints what it removes.
 - The trainer refuses to save a checkpoint whose weights contain NaN/inf, and does not save the same step twice.
 
-## Status and results
-The pipeline, its tests and the offline smoke run are complete. Perplexity results for the clean continuous-text run
-(20,000 -> 30,000 steps on Kaggle) will be added here when that run has finished; the earlier 20,000-step model was
-trained with the previous pipeline (its last stage mixed in question-answering and other task data).
+## Results (Kaggle T4, measured)
+All four models use the same Qwen tokenizer, so their perplexities are comparable. Text: 200 windows of 512 tokens,
+FineWeb-Edu documents taken after the first 300,000 (unseen by every from-scratch run) and the WikiText-103 test set.
+Lower is better.
+
+| Model | FineWeb-Edu perplexity | WikiText-103 perplexity |
+|---|---|---|
+| v1 scratch (old pipeline, 20,000 steps; its last stage mixed in task data) | 71.48 | 138.54 |
+| **v2 modular, 30,000 steps** (the v1 model + 10,000 steps of clean continuous text) | **41.97** | **93.54** |
+| fine-tuned Qwen2.5-0.5B (pretrained start) | 15.69 | 18.79 |
+| pretrained Qwen2.5-0.5B | 16.52 | 16.85 |
+
+During the 10,000-step run (held-out text inside the training notebook, a different set of windows): FineWeb-Edu
+perplexity 66.73 -> 46.95 and WikiText-103 131.74 -> 90.88 (loss 4.20 -> 3.85). About 246 million training tokens in total.
+
+**Repetition.** One greedy generation of 600 tokens from "Once upon a time": share of repeated 4-grams in the first 512
+tokens (inside the training context window) and after them (beyond it):
+
+| Model | inside the window | beyond the window |
+|---|---|---|
+| v1 scratch | 95.8% | 82.0% |
+| v2 modular 30k | 94.3% | 83.1% |
+| fine-tuned | 96.2% | 88.8% |
+| pretrained | 73.7% | 37.1% |
+
+Repetition is as high inside the window as beyond it for every model, so running past the context window does not
+explain the looping (one prompt, greedy decoding). Generation is still held inside the window by the guard-rails.
+`generate.py` also offers `repetition_penalty` and `no_repeat_ngram_size`; their effect has not been measured yet.
+
+**How to read this.** The 41% (FineWeb-Edu) and 32.5% (WikiText) perplexity gains come from 10,000 more steps on clean text together; the two causes
+are not separated. The model is still about 2.5x (FineWeb-Edu) and 5.5x (WikiText) behind the pretrained model, as
+expected from a few hundred million training tokens against trillions.
+
+## Where things are
+- `kaggle_run/`: the notebooks as executed on a Kaggle T4, with their outputs: `Run1_Baseline_Evaluation` (the three existing
+  models), `Run2_Train_20k_to_30k_HF_Backups` (the 10,000-step run with Hugging Face checkpoint backups) and
+  `Run3_Final_Comparison` (the table above). They call the package functions directly.
+- `kaggle/run_pipeline.ipynb`: a runner for `scripts/train.py`; not executed on Kaggle yet.
+- Models are in private Hugging Face repositories (`Thesis_Scratch_1`, `Thesis_Modular_v2_30k`); access can be shared on request.
