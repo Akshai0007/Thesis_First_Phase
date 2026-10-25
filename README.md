@@ -46,7 +46,7 @@ New dataset type: add a function with `@SOURCES.register("name")` in `data/sourc
 New tokenizer type: add a class with `@TOKENIZERS.register("name")` in `data/tokenizers.py`
 (`encode`, `decode`, `len()`, `eos_id`, `pad_id`).
 
-## Structure (matches the professor's five modules)
+## Structure (five-module architecture)
 | Module | Files |
 |---|---|
 | 1. Configuration | `src/qwenlab/config.py`, `configs/` |
@@ -64,7 +64,7 @@ and at most `data.max_val_fraction` of the text) and are never trained on.
 1. Put the trained Unigram-32k `.model` at `tokenizers/malayalam_unigram32k.model` (or set `tokenizer.path`).
 2. Check the dataset id / `data_dir` in `configs/malayalam.json`.
 3. Use the SAME cleaning for tokenizer and model text: `data.normalizer=malayalam` (rules from the project record;
-   register your own `malayalam_norm.py` function under that name if you want exact parity).
+   register a custom `malayalam_norm.py` function under that name for exact parity).
 4. Review the training numbers (learning rate, warmup, micro-batch) - `base.json` holds the English values.
 5. `python scripts/train.py --config configs/base.json configs/malayalam.json`
 

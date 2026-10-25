@@ -1,4 +1,4 @@
-# qwenlab: how the pipeline meets the professor's requirements
+# qwenlab: pipeline architecture and verification audit
 
 ## Mapping
 | Requirement | Where | How it is checked |
