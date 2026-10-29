@@ -1,6 +1,6 @@
 {
   "run_name": "malayalam",
-  "_note": "Template: put your trained Unigram-32k .model at tokenizers/malayalam_unigram32k.model and check the dataset id/params before use.",
+  "_note": "Template: requires the trained Unigram-32k .model at tokenizers/malayalam_unigram32k.model; the dataset id and params need checking before use.",
   "tokenizer": {"name": "sentencepiece", "path": "tokenizers/malayalam_unigram32k.model"},
   "data": {
     "source": {"kind": "hf_dataset",

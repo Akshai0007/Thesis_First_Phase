@@ -3,7 +3,7 @@
     tok.encode(text) -> list[int]      tok.decode(ids) -> str
     len(tok)  (vocabulary size)        tok.eos_id, tok.pad_id
 
-To use a different tokenizer (e.g. a Malayalam SentencePiece model) you change `tokenizer.name` and
+To use a different tokenizer (e.g. a Malayalam SentencePiece model), change `tokenizer.name` and
 `tokenizer.path` in the config. Nothing else changes: the model's embedding table is sized from len(tok)
 by models/factory.py.
 """

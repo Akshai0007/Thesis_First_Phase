@@ -1,7 +1,7 @@
 """Optional Hugging Face Hub backup/restore so a Kaggle session that ends (or a lost output folder) never loses
 training. Enabled by `train.hub_repo_id`; needs a token in the HF_TOKEN environment variable.
 
-Safety rules (learned the hard way in this project):
+Safety rules:
   * a Hub failure NEVER stops training: every call is retried 3 times, then logged and skipped;
   * the only deletion is prune_stale_lfs(), which removes ONLY objects no current file refers to, with guards;
   * each full checkpoint upload adds a new ~6 GB copy to the repository's storage (old copies are not freed
@@ -61,8 +61,8 @@ class HubBackup:
         """Free Hub storage taken by OLD versions of files that were overwritten (e.g. earlier progress.pt copies).
 
         An LFS object is kept if its SHA-256 (`file_oid`) belongs to ANY file at the current head of the repo.
-        (`oid` is a different identifier - comparing it with the head's SHA-256 once made every object look
-        stale and deleted the current model.) Safety rules, all enforced here:
+        (`oid` is a different identifier: comparing it with the head's SHA-256 would make every object look
+        stale.) Safety rules, all enforced here:
           * the head must contain LFS files, and at least one stored object must match one of them,
             otherwise nothing is deleted;
           * if every stored object would be deleted, nothing is deleted;

@@ -1,4 +1,4 @@
-# qwenlab — modular from-scratch causal-LM pipeline (Qwen2.5-0.5B architecture)
+# qwenlab: modular from-scratch causal-LM pipeline (Qwen2.5-0.5B architecture)
 
 Trains a **randomly initialised** Qwen2.5-0.5B-architecture model on **continuous text** (next-word prediction),
 logs **loss and perplexity** on held-out text, checkpoints every N steps (resumable), and generates text with
@@ -21,7 +21,7 @@ python scripts/generate.py --run-dir /kaggle/working/runs/english --prompt "The 
 # does repetition come from running past the training context window? (long generation, inside vs beyond the window)
 python scripts/generate.py --run-dir /kaggle/working/runs/english --prompt "Once upon a time" --repetition-check
 
-# small run with the real Qwen tokenizer and FineWeb-Edu (needs internet; minutes on a GPU) - perplexity should fall from ~vocabulary size:
+# small run with the real Qwen tokenizer and FineWeb-Edu (needs internet; 1 to 20 minutes depending on the machine) - perplexity starts near the vocabulary size and falls:
 python scripts/train.py --config configs/base.json configs/english_demo.json
 ```
 Re-running the same `train.py` command resumes from the last checkpoint (exact data position, no repeats).
@@ -63,15 +63,15 @@ and at most `data.max_val_fraction` of the text) and are never trained on.
 ## English -> Malayalam checklist
 1. Put the trained Unigram-32k `.model` at `tokenizers/malayalam_unigram32k.model` (or set `tokenizer.path`).
 2. Check the dataset id / `data_dir` in `configs/malayalam.json`.
-3. Use the SAME cleaning for tokenizer and model text: `data.normalizer=malayalam` (rules from the project record;
-   register a custom `malayalam_norm.py` function under that name for exact parity).
+3. Clean the model text exactly as the tokenizer text was cleaned: `data.normalizer=malayalam` (NFC, chillu normalisation,
+   junk removal; a custom function can be registered under that name if the tokenizer was trained with different rules).
 4. Review the training numbers (learning rate, warmup, micro-batch) - `base.json` holds the English values.
 5. `python scripts/train.py --config configs/base.json configs/malayalam.json`
 
 ## Multi-session runs, pausing, backup
 - **Pause at a step without changing the learning-rate curve:** keep `train.max_steps` at the planned total and set
-  `train.stop_at_step=20000`; later run again without it. (Changing `max_steps` itself between sessions changes the
-  schedule - do not.) The run also stops cleanly at `train.time_budget_minutes` and resumes.
+  `train.stop_at_step=20000`; later run again without it. (`max_steps` stays fixed between sessions, because it
+  determines the schedule.) The run also stops cleanly at `train.time_budget_minutes` and resumes.
 - **Hub backup (optional):** `--set train.hub_repo_id=user/repo` and an `HF_TOKEN` (Kaggle secret). The latest full
   checkpoint is uploaded every `train.hub_upload_every_n_saves` saves and at the end; on a fresh session the same command
   restores it first. Upload failures never stop training and nothing is ever deleted from the Hub. Each full upload
@@ -86,7 +86,7 @@ and at most `data.max_val_fraction` of the text) and are never trained on.
 
 ## Added for the Kaggle notebooks (v0.3)
 - `train.schedule_start_step=N`: the learning-rate schedule restarts at step N (new warm-up / stable / decay over the
-  remaining steps). Use it to continue a run that already decayed: a plain longer plan would jump from the decayed rate
+  remaining steps). Used to continue a run that already decayed: a plain longer plan would jump from the decayed rate
   back to the old peak.
 - `data.source.params.skip_docs=N`: ignore the first N documents (text an earlier run already trained on).
 - `HubBackup.prune_stale_lfs()`: frees old overwritten checkpoint copies on the Hub. It compares `file_oid` (never `oid`),
@@ -122,9 +122,17 @@ Repetition is as high inside the window as beyond it for every model, so running
 explain the looping (one prompt, greedy decoding). Generation is still held inside the window by the guard-rails.
 `generate.py` also offers `repetition_penalty` and `no_repeat_ngram_size`; their effect has not been measured yet.
 
-**How to read this.** The 41% (FineWeb-Edu) and 32.5% (WikiText) perplexity gains come from 10,000 more steps on clean text together; the two causes
-are not separated. The model is still about 2.5x (FineWeb-Edu) and 5.5x (WikiText) behind the pretrained model, as
+**Notes.** The perplexity gains (41% on FineWeb-Edu, 32.5% on WikiText-103) come from 10,000 further steps on clean text; the effect of
+more training and the effect of cleaner data are not separated. The model is still about 2.5x (FineWeb-Edu) and 5.5x (WikiText) behind the pretrained model, as
 expected from a few hundred million training tokens against trillions.
+
+## Script check
+`scripts/train.py`, `scripts/evaluate.py` and `scripts/generate.py` were run end to end on Kaggle with the real Qwen tokenizer and
+streamed FineWeb-Edu (`configs/base.json` + `configs/english_demo.json`: 19.8M-parameter model, 200 steps). Validation perplexity
+fell from 154,503 at step 0 (vocabulary size 151,680) to 2,250 at step 200; on WikiText-103 it is 3,664. 4 of 1,924 documents were dropped as
+question-and-answer format. A request for 9,999 new tokens was limited to 64, inside the 128-token window. Repeating the run gave an
+identical step-0 value and step-200 values of 2,248 and 2,250. After 200 steps the generated text is repetitive; this run checks
+the scripts, not model quality.
 
 ## Where things are
 - `kaggle_run/`: the notebooks as executed on a Kaggle T4, with their outputs: `Run1_Baseline_Evaluation` (the three existing

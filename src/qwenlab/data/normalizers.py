@@ -38,8 +38,8 @@ _JUNK = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b\ufeff\u00ad]")
 def malayalam(text: str) -> str:
     """NFC (also composes two-part vowel signs), old-style chillu -> atomic chillu, remove junk characters.
     ZWJ / ZWNJ are otherwise KEPT: they carry meaning in Malayalam spelling.
-    Written from the rules in the project record (sections 8.4, 20.4); if you have malayalam_norm.py, register
-    its function under this name instead, so tokenizer and model data use exactly the same code."""
+    To use a custom normaliser instead, register it under this name, so that tokenizer and model data are cleaned
+    by exactly the same code."""
     text = unicodedata.normalize("NFC", text).replace("\r\n", "\n")
     text = _CHILLU_RE.sub(lambda m: _CHILLU[m.group(1)], text)
     text = _JUNK.sub("", text)

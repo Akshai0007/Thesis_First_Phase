@@ -20,9 +20,16 @@
   - baseline evaluation of the three existing models;
   - a dry run, then the main run from step 21,000 to 30,000 in fp16 (about 3.3 s/step; this session resumed from the run's own checkpoint at step 21,000, written by an earlier session): 18 checkpoint uploads to the Hub, each followed by deletion of exactly one old copy, resume from the uploaded checkpoint, export to `hf_model/` (logit difference 7.8e-05);
   - final comparison of four models (see README, Results).
+- The three scripts end to end on Kaggle with the real Qwen tokenizer and FineWeb-Edu streamed from the Hub (`configs/base.json` + `configs/english_demo.json`: 19.8M-parameter model, 200 steps, fp32); the second run was at commit 8268993 and the first at 2f247e3, which differs from it only in documentation and notebooks:
+  - 92 tests passed (64 s);
+  - 1,924 documents read, 1,920 kept, 4 dropped as question-and-answer format;
+  - validation perplexity 154,503 at step 0 (vocabulary size 151,680) -> 2,250 at step 200; the same check on WikiText-103: 3,664;
+  - a request for 9,999 new tokens was limited to 64, inside the 128-token context window;
+  - the run was done twice: step 0 was identical (154,502.96) and step 200 was 2,248.07 and 2,249.50.
+  The 200-step samples are repetitive and the repetition check reads 0.98 inside and 0.99 beyond the window; for a model this small and short-trained this shows only that the scripts work, not model quality.
 
 ## What has not been run yet
-- `scripts/train.py` itself with `configs/english.json` on a GPU (the Kaggle runs used the same package functions through notebooks). `configs/english_demo.json` is the quick way to check the script end to end with the real tokenizer and dataset (needs internet).
+- `scripts/train.py` with `configs/english.json` (494M-parameter model, fp16 on a GPU). The demo above uses a 19.8M-parameter model in fp32; the 494M-parameter runs used the same package functions through the notebooks in `kaggle_run/`.
 - A from-scratch 0 -> 30,000 run of the new clean-text pipeline: the 30k model started from the earlier 20,000-step checkpoint.
 - The effect of `repetition_penalty` / `no_repeat_ngram_size` on repetition.
 

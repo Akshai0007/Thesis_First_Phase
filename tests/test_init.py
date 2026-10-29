@@ -1,5 +1,5 @@
-"""Directly verifies the professor's instruction: weights must come from a
-real distribution, never a repeated constant. Runs on the actual
+"""Verifies that weights come from a real random distribution and are never a
+repeated constant. Runs on the actual
 QwenForCausalLM model, not a toy nn.Module, so it also exercises whether
 init.py correctly recognizes every real module type in this architecture
 (Linear, Embedding, RMSNorm) -- missing one silently would be a real bug.
