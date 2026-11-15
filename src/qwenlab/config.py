@@ -38,6 +38,11 @@ class ModelConfig:
     vocab_pad_multiple: int = 128         # used when auto_vocab is True
     auto_vocab: bool = True               # True: vocab_size = len(tokenizer) rounded up to vocab_pad_multiple (new language).
                                           # False: use vocab_size exactly as written (e.g. 151936 to match official Qwen2.5 / earlier checkpoints)
+    # ---- v0.4: any Hugging Face architecture through the same config (only used when name == "hf") ----
+    arch: str = ""                        # preset in models/arch_presets.py: qwen2 | qwen3 | llama | olmo2 | smollm3 | gemma3 | falcon_h1 | qwen3_5
+    hf_config: Dict[str, Any] = field(default_factory=dict)   # extra / overriding fields for the Hugging Face config
+    attn_impl: str = "sdpa"               # name == "hf": sdpa | flash_attention_2 | eager
+    loss_chunk_checkpoint: bool = False   # recompute each loss chunk's logits in the backward pass (saves memory: huge vocab x long context)
 
     def __post_init__(self):
         assert self.hidden_size % self.num_heads == 0, "hidden_size must be divisible by num_heads"
@@ -113,6 +118,8 @@ class PretrainDataConfig:
     normalizer: str = "default"               # text cleaning, by name: "default" | "malayalam" (data/normalizers.py)
     script: str = ""                          # optional script filter, e.g. "malayalam"
     min_script_ratio: float = 0.0             # drop documents with a smaller share of letters in `script`
+    token_dtype: str = "uint32"               # v0.4: "uint16" halves cache size/RAM when the vocabulary is < 65,536 (use it for 32k Malayalam)
+    dedup_exact: bool = False                 # v0.4: drop exact-duplicate documents (after cleaning); counted in data_stats
 
 
 @dataclass
@@ -144,8 +151,11 @@ class TrainConfig:
     eps: float = 1e-8
     grad_clip: float = 1.0
     no_decay_embeddings: bool = True
-    precision: str = "auto"               # auto | bf16 | fp16 | fp32
-    compile: bool = False
+    precision: str = "auto"               # auto | bf16 | fp16 | fp32  (auto: bf16 on Ampere/Hopper GPUs, fp16+GradScaler on older GPUs such as the T4)
+    compile: bool = False                 # v0.4: torch.compile(model) on CUDA
+    optimizer: str = "adamw"              # v0.4: key in OPTIMIZERS: adamw | muon_adamw
+    optimizer_params: Dict[str, Any] = field(default_factory=dict)   # optimizer-specific, e.g. {"momentum": 0.95, "scale_mode": "match_adamw_rms"}
+    fused_adamw: bool = False             # v0.4: fused AdamW CUDA kernel (same maths, faster); off by default so old runs stay bit-identical
     log_every: int = 10
     eval_every: int = 200
     eval_batches: int = 20
@@ -155,6 +165,7 @@ class TrainConfig:
     time_budget_minutes: Optional[float] = None   # stop cleanly before a session limit (Kaggle)
     hub_repo_id: Optional[str] = None     # e.g. "user/my-run": back up / restore checkpoints on the Hugging Face Hub (needs HF_TOKEN)
     hub_upload_every_n_saves: int = 4     # full checkpoints are ~6 GB each: upload rarely (and always at the end)
+    hub_path_prefix: str = ""             # v0.4: folder inside the Hub repo for this run, so many runs (a tournament) can share ONE repo
     export_hf: bool = False               # at the end, also write hf_model/ (Hugging Face Qwen2 format, safetensors)
     seed: int = 42
 
@@ -164,6 +175,7 @@ class EvalConfig:
     """Held-out evaluation: cross-entropy loss AND perplexity on the validation windows."""
     eval_at_start: bool = True            # also score the untrained model (loss ~ ln(vocab), perplexity ~ vocab)
     batch_size: int = 8                   # validation micro-batch size
+    position_loss: bool = True            # v0.4: final evaluation also reports loss by position inside the context window
 
 
 @dataclass

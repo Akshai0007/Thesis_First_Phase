@@ -34,6 +34,7 @@ weights).
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from ..registry import MODELS
 from ..config import ModelConfig
@@ -178,8 +179,12 @@ class QwenForCausalLM(nn.Module):
                              f"({self.cfg.max_seq_len}, the length it is trained for); shorten the input")
         x = self.embed_tokens(input_ids)
         cos, sin = self.rope_cos[:s].to(x.dtype), self.rope_sin[:s].to(x.dtype)
+        use_ckpt = self.cfg.gradient_checkpointing and self.training and torch.is_grad_enabled()
         for layer in self.layers:
-            x = layer(x, cos, sin, attn_mask)
+            if use_ckpt:                                  # v0.4: model.gradient_checkpointing was a config field nobody read
+                x = checkpoint(layer, x, cos, sin, attn_mask, use_reentrant=False)
+            else:
+                x = layer(x, cos, sin, attn_mask)
         x = self.norm(x)
 
         if labels is None:
@@ -214,19 +219,26 @@ class QwenForCausalLM(nn.Module):
         # never exercised the actual loss computation.
         x_flat, labels_flat = x.reshape(-1, x.size(-1)), labels.reshape(-1)
         mask_flat = loss_mask.reshape(-1) if loss_mask is not None else None
-        total_loss, total_count = x.new_zeros(()), 0
+        total_loss = x.new_zeros(())
+        total_count = torch.zeros((), dtype=torch.long, device=x.device)     # kept on the GPU: no .item() sync per chunk
+        use_ckpt = self.cfg.loss_chunk_checkpoint and torch.is_grad_enabled()
+
+        def piece(xc, lc):
+            per_tok = F.cross_entropy(self.lm_head(xc), lc, ignore_index=-100, reduction="sum")
+            return per_tok, (lc != -100).sum()
+
         for i in range(0, x_flat.size(0), chunk):
             xc = x_flat[i:i + chunk]
             lc = labels_flat[i:i + chunk]
-            logits_c = self.lm_head(xc)
             if mask_flat is not None:
-                mc = mask_flat[i:i + chunk]
-                lc = lc.masked_fill(~mc.bool(), -100)
-            per_tok = F.cross_entropy(logits_c, lc, ignore_index=-100, reduction="sum")
-            n_valid = (lc != -100).sum()
+                lc = lc.masked_fill(~mask_flat[i:i + chunk].bool(), -100)
+            if use_ckpt:                                  # recompute this chunk's logits in backward instead of storing them
+                per_tok, n_valid = checkpoint(piece, xc, lc, use_reentrant=False)
+            else:
+                per_tok, n_valid = piece(xc, lc)
             total_loss = total_loss + per_tok
-            total_count += n_valid.item()
-        return total_loss / max(total_count, 1)
+            total_count = total_count + n_valid
+        return total_loss / total_count.clamp_min(1)
 
     @torch.no_grad()
     def generate(self, input_ids, max_new_tokens, temperature=1.0, top_k=None):

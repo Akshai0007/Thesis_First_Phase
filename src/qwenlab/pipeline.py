@@ -22,6 +22,7 @@ from .data.mixing import ResumableBatcher, make_cycler
 from .data.pretrain_data import build_pretrain_data, lm_make_batch
 from .data.tokenizers import build_tokenizer
 from .evaluation.perplexity import evaluate_lm
+from .evaluation.position_loss import loss_by_position
 from .export import export_hf
 from .hub import HubBackup
 from .inference.generate import generate_text
@@ -89,16 +90,18 @@ def run_training(cfg: ExperimentConfig, log=print, hub=None) -> dict:
     out = Path(cfg.train.output_dir); out.mkdir(parents=True, exist_ok=True)
     if hub is None and cfg.train.hub_repo_id:
         hub = HubBackup(cfg.train.hub_repo_id, log=log)
+    hp = (lambda path: f"{cfg.train.hub_path_prefix.strip('/')}/{path}") if cfg.train.hub_path_prefix else (lambda path: path)
     tokenizer, data, model = prepare(cfg, log)
     save_config(cfg, str(out / "experiment.json"))     # everything needed to rebuild the model / generate later
     if hub and cfg.train.resume:                       # a fresh Kaggle session: pull the last backup first
-        hub.restore_file("checkpoints/progress.pt", out / "checkpoints" / "progress.pt")
-        hub.restore_file("data_fingerprint.txt", out / "data_fingerprint.txt")
+        hub.restore_file(hp("checkpoints/progress.pt"), out / "checkpoints" / "progress.pt")
+        hub.restore_file(hp("data_fingerprint.txt"), out / "data_fingerprint.txt")
     log(f"[model] {sum(p.numel() for p in model.parameters()):,} parameters | vocab {cfg.model.vocab_size} | "
         f"context {cfg.data.seq_len} | train windows {len(data.train):,} | val windows {len(data.val):,}")
 
     trainer = Trainer(model, cfg.train)
     device = trainer.device
+    _configure_accounting(trainer, cfg, model, data)
     fp_file, fp = out / "data_fingerprint.txt", data_fingerprint(data)
     if trainer.start_step > 0 and fp_file.exists() and fp_file.read_text().strip() != fp:
         raise RuntimeError(f"the training data changed since this run started (fingerprint {fp_file.read_text().strip()} "
@@ -128,15 +131,25 @@ def run_training(cfg: ExperimentConfig, log=print, hub=None) -> dict:
     def on_checkpoint(step, path, final):              # optional Hub backup; failures are logged, never fatal
         saves["n"] += 1
         if hub and (final or saves["n"] % max(cfg.train.hub_upload_every_n_saves, 1) == 0):
-            hub.upload_file(path, "checkpoints/progress.pt", f"checkpoint step {step}")
-            hub.upload_file(fp_file, "data_fingerprint.txt")
-            hub.upload_file(trainer.metrics_path, "metrics.jsonl")
-            hub.upload_file(out / "experiment.json", "experiment.json")
+            hub.upload_file(path, hp("checkpoints/progress.pt"), f"checkpoint step {step}")
+            hub.upload_file(fp_file, hp("data_fingerprint.txt"))
+            hub.upload_file(trainer.metrics_path, hp("metrics.jsonl"))
+            hub.upload_file(out / "experiment.json", hp("experiment.json"))
 
     result = trainer.fit(batcher, val_batch_fn=val_fn, on_checkpoint=on_checkpoint)
 
     final = evaluate_lm(model, val_fn, len(val_batches), device, trainer.dtype)
     log(f"[final] step {result['final_step']}: val loss {final['loss']:.4f} | perplexity {final['perplexity']:.2f}")
+    val_bpb = final["loss"] / math.log(2) * trainer.bpb_factor if trainer.bpb_factor else None
+    if val_bpb is not None:
+        log(f"[final] val bits-per-byte {val_bpb:.4f}")
+    pos_loss = None
+    if cfg.eval.position_loss:
+        try:
+            pos_loss = loss_by_position(model, val_fn, min(len(val_batches), 20), device, trainer.dtype)
+            log(f"[final] loss by position: { {k: round(v, 3) for k, v in pos_loss.items()} }")
+        except Exception as e:                         # a diagnostic must never lose a finished run
+            log(f"[final] loss-by-position skipped ({type(e).__name__}: {e})")
     torch.save({"model_state_dict": {k: v.cpu() for k, v in model.state_dict().items()}, "step": result["final_step"]},
                out / "model_final.pt")
     samples = {}
@@ -148,15 +161,36 @@ def run_training(cfg: ExperimentConfig, log=print, hub=None) -> dict:
             diff = export_hf(model, cfg.model, tokenizer, out / "hf_model", log=log)
             result["hf_export_max_logit_diff"] = diff
             if hub:
-                hub.upload_folder(out / "hf_model", "hf_model")
+                hub.upload_folder(out / "hf_model", hp("hf_model"))
         except Exception as e:                         # the trained weights are already saved; report and continue
             log(f"[export] hf_model export FAILED ({type(e).__name__}: {e}); model_final.pt is still saved")
     summary = {**result, "val_loss": final["loss"], "val_perplexity": final["perplexity"], "samples": samples,
-               "data_stats": data.stats}
+               "data_stats": data.stats, "val_bpb": val_bpb, "val_loss_by_position": pos_loss,
+               "tokens_seen": trainer.tokens_seen, "train_time_s": trainer.train_time_s,
+               "n_params": sum(p.numel() for p in model.parameters()),
+               "model": {"name": cfg.model.name, "arch": cfg.model.arch}}
     (out / "results.json").write_text(json.dumps(summary, indent=2))
     if hub:
-        hub.upload_file(out / "results.json", "results.json")
+        hub.upload_file(out / "results.json", hp("results.json"))
     return summary
+
+
+def _configure_accounting(trainer, cfg, model, data):
+    """v0.4: lets the trainer report bits-per-byte (needs the byte count of the validation text) and MFU."""
+    vb, vt = data.stats.get("val_bytes"), data.stats.get("val_tokens")
+    if vb and vt:
+        trainer.bpb_factor = vt / vb                   # tokens per byte of validation text
+    n = sum(p.numel() for p in model.parameters())     # tied embeddings count once = the lm_head matmul
+    m = cfg.model
+    trainer.flops_per_token = 6.0 * n + 12.0 * m.num_layers * m.num_heads * m.head_dim * cfg.data.seq_len
+    if str(trainer.device).startswith("cuda") and torch.cuda.is_available():
+        name = torch.cuda.get_device_name(0)
+        if "A100" in name:
+            trainer.peak_flops = 312e12                # bf16/fp16 dense peak
+        elif "H100" in name:
+            trainer.peak_flops = 989e12
+        elif "T4" in name:
+            trainer.peak_flops = 65e12
 
 
 def _gen_kwargs(cfg: ExperimentConfig) -> dict:

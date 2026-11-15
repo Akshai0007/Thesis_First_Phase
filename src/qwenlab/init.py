@@ -80,6 +80,13 @@ def init_gpt2_scaled(model: nn.Module, std: float = 0.02, truncate_sigma: float 
     return model
 
 
+@INIT_SCHEMES.register("hf_default")
+def init_hf_default(model: nn.Module, **_):
+    """Keep the initialisation the Hugging Face architecture applies itself (use for hybrid / state-space models,
+    whose special parameters - A_log, dt_bias, conv weights - must not be overwritten)."""
+    return model
+
+
 def apply_init(model: nn.Module, init_cfg) -> nn.Module:
     fn = INIT_SCHEMES.get(init_cfg.scheme)
     return fn(model, std=init_cfg.std, truncate_sigma=init_cfg.truncate_sigma,

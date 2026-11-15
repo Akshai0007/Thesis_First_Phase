@@ -1,0 +1,118 @@
+{
+  "_note": "Kaggle 2x T4 proof run: every candidate at FULL size for ~3M tokens. Run phases check -> smoke -> prepare -> probe -> race -> report. If the real tokenizer is not ready, check/smoke work without it (use --vocab 32000).",
+  "name": "smoke_kaggle",
+  "configs": [
+    "configs/base.json",
+    "configs/malayalam.json"
+  ],
+  "candidates": [
+    {
+      "id": "qwen2_custom",
+      "overrides": [
+        "model.name=\"qwen\""
+      ]
+    },
+    {
+      "id": "qwen2_hf",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen2\""
+      ]
+    },
+    {
+      "id": "qwen3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\""
+      ]
+    },
+    {
+      "id": "llama",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"llama\""
+      ]
+    },
+    {
+      "id": "olmo2",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"olmo2\""
+      ]
+    },
+    {
+      "id": "smollm3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"smollm3\""
+      ]
+    },
+    {
+      "id": "gemma3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"gemma3\""
+      ]
+    },
+    {
+      "id": "qwen3_deep",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\"",
+        "model.hidden_size=768",
+        "model.intermediate_size=4352",
+        "model.num_layers=32",
+        "model.num_heads=12",
+        "model.num_kv_heads=2"
+      ]
+    },
+    {
+      "id": "qwen3_wide",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\"",
+        "model.hidden_size=1152",
+        "model.intermediate_size=5632",
+        "model.num_layers=16",
+        "model.num_heads=18",
+        "model.num_kv_heads=2"
+      ]
+    }
+  ],
+  "seq_len": 512,
+  "batch_tokens": 16384,
+  "tokens": 3211264,
+  "lr": 0.0006,
+  "evals": 4,
+  "micro_batch_size": 4,
+  "seeds": [
+    1
+  ],
+  "gpus": [
+    0,
+    1
+  ],
+  "forbidden_gpus": [
+    7
+  ],
+  "runs_root": "/kaggle/working/tournament",
+  "overrides": [
+    "data.token_dtype=\"uint16\"",
+    "train.fused_adamw=true",
+    "train.log_every=20",
+    "train.time_budget_minutes=null",
+    "train.export_hf=false",
+    "train.precision=\"auto\"",
+    "train.compile=false",
+    "train.grad_clip=1.0",
+    "train.schedule=\"wsd\"",
+    "model.loss_chunk_tokens=4096",
+    "model.auto_vocab=true",
+    "eval.batch_size=8",
+    "eval.position_loss=true",
+    "generation.probe_prompts=[\"കേരളത്തിന്റെ തലസ്ഥാനം\"]",
+    "train.precision=\"auto\"",
+    "data.max_train_tokens=20000000",
+    "data.val_tokens=200000"
+  ]
+}

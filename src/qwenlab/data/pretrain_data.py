@@ -48,7 +48,12 @@ class PretrainData:
 
 
 def _fingerprint(data_cfg, tok_cfg, vocab: int) -> str:
-    blob = json.dumps({"source": [data_cfg.source.kind, data_cfg.source.params], "tok": [tok_cfg.name, tok_cfg.path],
+    extra = {}                                   # v0.4 options enter the key only when changed, so old caches keep their names
+    if getattr(data_cfg, "token_dtype", "uint32") != "uint32":
+        extra["dtype"] = data_cfg.token_dtype
+    if getattr(data_cfg, "dedup_exact", False):
+        extra["dedup"] = True
+    blob = json.dumps({**extra, "source": [data_cfg.source.kind, data_cfg.source.params], "tok": [tok_cfg.name, tok_cfg.path],
                        "vocab": vocab, "max_train_tokens": data_cfg.max_train_tokens, "val_tokens": data_cfg.val_tokens,
                        "min_chars": data_cfg.min_chars, "norm": [data_cfg.normalizer, data_cfg.script, data_cfg.min_script_ratio],
                        "val_frac": data_cfg.max_val_fraction, "drop_qa": data_cfg.drop_qa_format}, sort_keys=True)
@@ -73,12 +78,23 @@ def build_pretrain_data(data_cfg, tok_cfg, tokenizer, log=print) -> PretrainData
 
     val, train = array("I"), array("I")
     docs = {"kept": 0, "dropped_short": 0, "dropped_qa_format": 0, "dropped_wrong_script": 0}
+    val_bytes = train_bytes = 0                  # UTF-8 bytes of the cleaned text: needed for bits-per-byte (tokenizer-independent)
+    seen = set() if data_cfg.dedup_exact else None
+    if seen is not None:
+        docs["dropped_duplicate"] = 0
     for text in build_source(data_cfg.source):
         text, why = clean_document(text, data_cfg.min_chars, data_cfg.normalizer, data_cfg.script,
                                    data_cfg.min_script_ratio, data_cfg.drop_qa_format)
         if text is None:
             docs["dropped_" + why] += 1
             continue
+        if seen is not None:
+            h = hashlib.md5(text.encode("utf-8")).digest()
+            if h in seen:
+                docs["dropped_duplicate"] += 1
+                continue
+            seen.add(h)
+        nbytes = len(text.encode("utf-8"))
         ids = tokenizer.encode(text)
         ids.append(tokenizer.eos_id)
         # a document goes to validation only while validation is below val_tokens AND below max_val_fraction of
@@ -86,6 +102,10 @@ def build_pretrain_data(data_cfg, tok_cfg, tokenizer, log=print) -> PretrainData
         to_val = (len(val) < data_cfg.val_tokens and
                   len(val) + len(ids) <= data_cfg.max_val_fraction * (len(val) + len(train) + len(ids)))
         (val if to_val else train).extend(ids)
+        if to_val:
+            val_bytes += nbytes
+        else:
+            train_bytes += nbytes
         docs["kept"] += 1
         if target_total is not None and len(val) + len(train) >= target_total:
             break
@@ -98,7 +118,13 @@ def build_pretrain_data(data_cfg, tok_cfg, tokenizer, log=print) -> PretrainData
 
     train_np, val_np = np.frombuffer(train, dtype=np.uint32), np.frombuffer(val, dtype=np.uint32)
     assert int(train_np.max()) < len(tokenizer) and int(val_np.max()) < len(tokenizer)
+    if data_cfg.token_dtype == "uint16":
+        assert len(tokenizer) < 65536, "token_dtype=uint16 needs a vocabulary below 65,536 tokens"
+        train_np, val_np = train_np.astype(np.uint16), val_np.astype(np.uint16)
+    elif data_cfg.token_dtype != "uint32":
+        raise ValueError(f"data.token_dtype must be 'uint32' or 'uint16', not {data_cfg.token_dtype!r}")
     stats = {**docs, "train_tokens": int(len(train_np)), "val_tokens": int(len(val_np)), "fingerprint": fp,
+             "train_bytes": int(train_bytes), "val_bytes": int(val_bytes),
              "dropped_qa_format_note": "documents containing chat/FIM markers or Question:/Answer: layouts are excluded"}
     np.save(f_train, train_np); np.save(f_val, val_np); f_meta.write_text(json.dumps(stats, indent=2))
     log(f"[data] built {fp}: {stats}")

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwenlab"
-version = "0.3.0"
+version = "0.4.0"
 description = "Modular from-scratch causal-LM pretraining pipeline for Qwen-style decoder LMs"
 requires-python = ">=3.10"
 dependencies = ["torch>=2.3", "numpy", "transformers>=4.44", "tokenizers", "datasets", "safetensors", "sentencepiece"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+hf-archs = ["transformers>=4.53"]   # Qwen3 / SmolLM3 / OLMo-2 / Gemma-3 classes (the tournament "check" phase tells you what your version lacks)
 
 [tool.setuptools.packages.find]
 where = ["src"]

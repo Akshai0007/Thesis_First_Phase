@@ -1,0 +1,83 @@
+{
+  "_note": "CONTEXT-WINDOW study on the winner: same tokens and batch, different window. Compare the loss in the SHARED position buckets (e.g. 1024-2048) from results.json, not the overall loss. Micro-batch comes from the probe (run `probe` for this plan first).",
+  "name": "race3_context",
+  "configs": [
+    "configs/base.json",
+    "configs/malayalam.json"
+  ],
+  "candidates": [
+    {
+      "id": "L1024",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "seq_len": 1024
+    },
+    {
+      "id": "L2048",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "seq_len": 2048
+    },
+    {
+      "id": "L4096",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "seq_len": 4096
+    },
+    {
+      "id": "L8192",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "seq_len": 8192
+    },
+    {
+      "id": "L16384",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "seq_len": 16384
+    }
+  ],
+  "batch_tokens": 524288,
+  "tokens": 629145600,
+  "lr": 0.0006,
+  "evals": 10,
+  "seeds": [
+    1
+  ],
+  "gpus": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "forbidden_gpus": [
+    7
+  ],
+  "runs_root": "runs/tournament",
+  "overrides": [
+    "data.token_dtype=\"uint16\"",
+    "data.dedup_exact=true",
+    "train.fused_adamw=true",
+    "train.log_every=20",
+    "train.time_budget_minutes=null",
+    "train.export_hf=false",
+    "train.precision=\"auto\"",
+    "train.compile=false",
+    "train.grad_clip=1.0",
+    "train.schedule=\"wsd\"",
+    "model.loss_chunk_tokens=4096",
+    "model.auto_vocab=true",
+    "eval.batch_size=8",
+    "eval.position_loss=true",
+    "generation.probe_prompts=[\"കേരളത്തിന്റെ തലസ്ഥാനം\"]",
+    "model.gradient_checkpointing=false",
+    "data.max_train_tokens=1500000000",
+    "data.val_tokens=1000000"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "_note": "Learning-rate check on the baseline BEFORE comparing architectures (a wrong LR makes every comparison unfair). ~45 min on 3 GPUs.",
+  "name": "race0_lr",
+  "configs": [
+    "configs/base.json",
+    "configs/malayalam.json"
+  ],
+  "candidates": [
+    {
+      "id": "qwen2_custom",
+      "overrides": [
+        "model.name=\"qwen\""
+      ]
+    }
+  ],
+  "grid": {
+    "lr": [
+      0.0003,
+      0.0006,
+      0.0012
+    ]
+  },
+  "seq_len": 2048,
+  "batch_tokens": 524288,
+  "tokens": 157286400,
+  "evals": 6,
+  "seeds": [
+    1
+  ],
+  "gpus": [
+    0,
+    1,
+    2
+  ],
+  "forbidden_gpus": [
+    7
+  ],
+  "runs_root": "runs/tournament",
+  "overrides": [
+    "data.token_dtype=\"uint16\"",
+    "data.dedup_exact=true",
+    "train.fused_adamw=true",
+    "train.log_every=20",
+    "train.time_budget_minutes=null",
+    "train.export_hf=false",
+    "train.precision=\"auto\"",
+    "train.compile=false",
+    "train.grad_clip=1.0",
+    "train.schedule=\"wsd\"",
+    "model.loss_chunk_tokens=4096",
+    "model.auto_vocab=true",
+    "eval.batch_size=8",
+    "eval.position_loss=true",
+    "generation.probe_prompts=[\"കേരളത്തിന്റെ തലസ്ഥാനം\"]",
+    "data.max_train_tokens=1500000000",
+    "data.val_tokens=1000000"
+  ]
+}

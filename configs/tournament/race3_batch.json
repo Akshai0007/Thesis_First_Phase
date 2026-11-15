@@ -1,0 +1,68 @@
+{
+  "_note": "BATCH-SIZE study on the winner: same tokens, three batch sizes, LR scaled ~sqrt(batch). Compare quality at equal TOKENS.",
+  "name": "race3_batch",
+  "configs": [
+    "configs/base.json",
+    "configs/malayalam.json"
+  ],
+  "candidates": [
+    {
+      "id": "bs256k",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "batch_tokens": 262144,
+      "lr": 0.00042
+    },
+    {
+      "id": "bs512k",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "batch_tokens": 524288,
+      "lr": 0.0006
+    },
+    {
+      "id": "bs1m",
+      "overrides": [
+        "EDIT: the winning model's overrides"
+      ],
+      "batch_tokens": 1048576,
+      "lr": 0.00085
+    }
+  ],
+  "seq_len": 2048,
+  "tokens": 629145600,
+  "evals": 10,
+  "seeds": [
+    1
+  ],
+  "gpus": [
+    0,
+    1,
+    2
+  ],
+  "forbidden_gpus": [
+    7
+  ],
+  "runs_root": "runs/tournament",
+  "overrides": [
+    "data.token_dtype=\"uint16\"",
+    "data.dedup_exact=true",
+    "train.fused_adamw=true",
+    "train.log_every=20",
+    "train.time_budget_minutes=null",
+    "train.export_hf=false",
+    "train.precision=\"auto\"",
+    "train.compile=false",
+    "train.grad_clip=1.0",
+    "train.schedule=\"wsd\"",
+    "model.loss_chunk_tokens=4096",
+    "model.auto_vocab=true",
+    "eval.batch_size=8",
+    "eval.position_loss=true",
+    "generation.probe_prompts=[\"കേരളത്തിന്റെ തലസ്ഥാനം\"]",
+    "data.max_train_tokens=1500000000",
+    "data.val_tokens=1000000"
+  ]
+}
