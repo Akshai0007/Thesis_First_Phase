@@ -9,10 +9,46 @@ import torch
 from .models.hf_bridge import ours_state_dict_to_hf
 
 
+def _save_tokenizer(tokenizer, out_dir):
+    tok = getattr(tokenizer, "tok", None)                  # Hugging Face tokenizer -> save it; SentencePiece -> copy the file
+    if tok is not None:
+        tok.save_pretrained(out_dir)
+    elif hasattr(tokenizer, "sp") and getattr(tokenizer, "path", None):
+        shutil.copy(tokenizer.path, Path(out_dir) / Path(tokenizer.path).name)
+
+
+def _export_hf_adapter(model, tokenizer, out_dir, log) -> float:
+    """model.name == "hf": the wrapped Hugging Face model already knows how to save itself."""
+    from transformers import AutoModelForCausalLM
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model.hf.save_pretrained(out_dir, safe_serialization=True)
+    _save_tokenizer(tokenizer, out_dir)
+    try:                                                   # prove the export: reload and compare logits
+        reloaded = AutoModelForCausalLM.from_pretrained(out_dir).eval()
+        dev = next(model.parameters()).device
+        ids = torch.randint(0, model.cfg.vocab_size, (1, min(32, model.cfg.max_seq_len)))
+        was_training = model.training
+        model.eval()
+        with torch.no_grad():
+            ours = model(ids.to(dev))[0].float().cpu()
+            theirs = reloaded(ids).logits.float()
+        if was_training:
+            model.train()
+        diff = float((ours - theirs).abs().max())
+    except Exception as e:                                 # exotic architectures may need extra packages to reload
+        log(f"[export] saved {out_dir}, but the reload check could not run ({type(e).__name__}: {e})")
+        return float("nan")
+    log(f"[export] hf_model written to {out_dir} | max logit difference vs reloaded model: {diff:.2e}")
+    return diff
+
+
 def export_hf(model, mcfg, tokenizer, out_dir, log=print) -> float:
     """Returns the largest logit difference between our model and the reloaded Hugging Face model (should be ~0)."""
+    if mcfg.name == "hf":
+        return _export_hf_adapter(model, tokenizer, out_dir, log)
     if mcfg.name != "qwen":
-        raise ValueError(f"export_hf supports the 'qwen' model only, not {mcfg.name!r}")
+        raise ValueError(f"export_hf supports the 'qwen' and 'hf' models, not {mcfg.name!r}")
     from transformers import Qwen2Config, Qwen2ForCausalLM
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -30,11 +66,7 @@ def export_hf(model, mcfg, tokenizer, out_dir, log=print) -> float:
     hf.tie_weights()
     hf.save_pretrained(out_dir, safe_serialization=True)
 
-    tok = getattr(tokenizer, "tok", None)                  # Hugging Face tokenizer -> save it; SentencePiece -> copy the file
-    if tok is not None:
-        tok.save_pretrained(out_dir)
-    elif hasattr(tokenizer, "sp") and getattr(tokenizer, "path", None):
-        shutil.copy(tokenizer.path, out_dir / Path(tokenizer.path).name)
+    _save_tokenizer(tokenizer, out_dir)
 
     # prove the export: reload from disk and compare logits with our model on random ids
     reloaded = Qwen2ForCausalLM.from_pretrained(out_dir).eval()

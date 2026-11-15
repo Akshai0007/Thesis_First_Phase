@@ -1,0 +1,124 @@
+{
+  "_note": "SCREENING: 9 candidates, 1 seed, ~300M tokens each, 6 GPUs = 2 waves (~5 h). Use `--phase budget --hours 5` after the probe to set tokens. Set lr from race0.",
+  "name": "race1_screen",
+  "configs": [
+    "configs/base.json",
+    "configs/malayalam.json"
+  ],
+  "candidates": [
+    {
+      "id": "qwen2_custom",
+      "overrides": [
+        "model.name=\"qwen\""
+      ]
+    },
+    {
+      "id": "qwen2_hf",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen2\""
+      ]
+    },
+    {
+      "id": "qwen3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\""
+      ]
+    },
+    {
+      "id": "llama",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"llama\""
+      ]
+    },
+    {
+      "id": "olmo2",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"olmo2\""
+      ]
+    },
+    {
+      "id": "smollm3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"smollm3\""
+      ]
+    },
+    {
+      "id": "gemma3",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"gemma3\""
+      ]
+    },
+    {
+      "id": "qwen3_deep",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\"",
+        "model.hidden_size=768",
+        "model.intermediate_size=4352",
+        "model.num_layers=32",
+        "model.num_heads=12",
+        "model.num_kv_heads=2"
+      ]
+    },
+    {
+      "id": "qwen3_wide",
+      "overrides": [
+        "model.name=\"hf\"",
+        "model.arch=\"qwen3\"",
+        "model.hidden_size=1152",
+        "model.intermediate_size=5632",
+        "model.num_layers=16",
+        "model.num_heads=18",
+        "model.num_kv_heads=2"
+      ]
+    }
+  ],
+  "seq_len": 2048,
+  "batch_tokens": 524288,
+  "tokens": 314572800,
+  "lr": 0.0006,
+  "evals": 12,
+  "seeds": [
+    1
+  ],
+  "gpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "forbidden_gpus": [
+    7
+  ],
+  "runs_root": "runs/tournament",
+  "overrides": [
+    "data.token_dtype=\"uint16\"",
+    "data.dedup_exact=true",
+    "train.fused_adamw=true",
+    "train.log_every=20",
+    "train.time_budget_minutes=null",
+    "train.export_hf=false",
+    "train.precision=\"auto\"",
+    "train.compile=false",
+    "train.grad_clip=1.0",
+    "train.schedule=\"wsd\"",
+    "model.loss_chunk_tokens=4096",
+    "model.auto_vocab=true",
+    "eval.batch_size=8",
+    "eval.position_loss=true",
+    "generation.probe_prompts=[\"കേരളത്തിന്റെ തലസ്ഥാനം\"]",
+    "data.max_train_tokens=1500000000",
+    "data.val_tokens=1000000"
+  ],
+  "report": {
+    "noise": 0.004
+  }
+}
