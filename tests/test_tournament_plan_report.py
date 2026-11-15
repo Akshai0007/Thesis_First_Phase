@@ -172,3 +172,21 @@ def test_stage_results_excludes_checkpoints_and_keeps_findings(tmp_path):
     assert "tournament/t/probe/A.json" in names and "tournament/t/report.md" in names and "tournament/t/README.md" in names
     assert not any(n.endswith(".pt") or "checkpoints" in n for n in names)
     assert out["runs"] == 1
+
+
+def test_cleanup_removes_heavy_files_but_keeps_the_findings(tmp_path):
+    from qwenlab.tournament.runner import cleanup_run_dir
+    run = tmp_path / "A_s1"
+    (run / "checkpoints").mkdir(parents=True)
+    (run / "checkpoints" / "progress.pt").write_bytes(b"x" * 4096)
+    (run / "model_final.pt").write_bytes(b"x" * 2048)
+    for f in ("metrics.jsonl", "results.json", "experiment.json", "stdout.log"):
+        (run / f).write_text("{}")
+    assert cleanup_run_dir(str(run)) == 6144
+    assert sorted(p.name for p in run.iterdir()) == ["experiment.json", "metrics.jsonl", "results.json", "stdout.log"]
+
+
+def test_smoke_plan_cleans_up_and_other_plans_keep_checkpoints():
+    here = os.path.join(os.path.dirname(__file__), "..", "configs", "tournament")
+    assert load_plan(os.path.join(here, "smoke_kaggle.json"))["cleanup_after_run"] is True
+    assert load_plan(os.path.join(here, "race1_screen.json"))["cleanup_after_run"] is False

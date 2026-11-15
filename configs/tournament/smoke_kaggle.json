@@ -1,5 +1,5 @@
 {
-  "_note": "Kaggle 2x T4 proof run: every candidate at FULL size for ~3M tokens. Run phases check -> smoke -> prepare -> probe -> race -> report. If the real tokenizer is not ready, check/smoke work without it (use --vocab 32000).",
+  "_note": "Kaggle 2x T4 proof run: every candidate at FULL size for ~3M tokens. Run phases check -> smoke -> prepare -> probe -> race -> report. If the real tokenizer is not ready, check/smoke work without it (use --vocab 32000). cleanup_after_run deletes each run's checkpoints when it finishes (Kaggle output limit 20 GB); max_minutes_per_job stops a slow candidate cleanly.",
   "name": "smoke_kaggle",
   "configs": [
     "configs/base.json",
@@ -114,5 +114,7 @@
     "train.precision=\"auto\"",
     "data.max_train_tokens=20000000",
     "data.val_tokens=200000"
-  ]
+  ],
+  "cleanup_after_run": true,
+  "max_minutes_per_job": 40
 }

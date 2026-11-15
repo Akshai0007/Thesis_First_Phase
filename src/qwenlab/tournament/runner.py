@@ -2,6 +2,7 @@
 stdlib only (the training itself happens in the child processes)."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,6 +21,21 @@ def _probe_info(plan: Dict[str, Any], cand_id: str) -> Optional[dict]:
 def command_for(plan: Dict[str, Any], job: Dict[str, Any], train_script: str, micro_batch: Optional[int] = None) -> List[str]:
     ov = job_overrides(plan, job, _probe_info(plan, job["cand"]["id"]), micro_batch)
     return [sys.executable, train_script, "--config", *plan["configs"], "--set", *ov]
+
+
+def cleanup_run_dir(out_dir: str) -> int:
+    """Delete the heavy files of a FINISHED run (checkpoints, final weights, exported model); keep metrics/results/config/logs.
+    Returns the bytes freed. Used when plan["cleanup_after_run"] is true (Kaggle: its output folder is limited to 20 GB)."""
+    freed = 0
+    for name in ("checkpoints", "hf_model", "model_final.pt"):
+        path = os.path.join(out_dir, name)
+        if os.path.isdir(path):
+            freed += sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(path) for f in fs)
+            shutil.rmtree(path, ignore_errors=True)
+        elif os.path.isfile(path):
+            freed += os.path.getsize(path)
+            os.remove(path)
+    return freed
 
 
 def _oom(log_path: str) -> bool:
@@ -58,6 +74,8 @@ def run_race(plan: Dict[str, Any], gpus: List[int], train_script: str, dry_run: 
             with open(log_path, "a", encoding="utf-8") as lf:
                 rc = subprocess.run(cmd, env={**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu)}, stdout=lf, stderr=subprocess.STDOUT).returncode
             if rc == 0:
+                if plan.get("cleanup_after_run") and os.path.exists(os.path.join(out_dir, "results.json")):
+                    log(f"[race] {job['id']}: freed {cleanup_run_dir(out_dir) / 2**30:.1f} GB of checkpoints")
                 return "done"
             if _oom(log_path) and attempt == 0:
                 cur = mb or plan["micro_batch_size"]

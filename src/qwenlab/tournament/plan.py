@@ -36,6 +36,7 @@ def load_plan(path: str) -> Dict[str, Any]:
     plan.setdefault("forbidden_gpus", [7])             # DGX policy: GPU 7 belongs to another workload
     plan.setdefault("runs_root", "runs/tournament")
     plan.setdefault("max_minutes_per_job", None)
+    plan.setdefault("cleanup_after_run", False)        # true on Kaggle: delete checkpoints of finished runs (20 GB output limit)
     plan.setdefault("save_every", 500)                 # local checkpoint every N steps (crash / session-loss insurance)
     plan.setdefault("hub_repo", None)                  # e.g. "user/malayalam-lm-tournament": checkpoints + results are backed up per run
     plan.setdefault("hub_upload_every_n_saves", 2)     # a full checkpoint is ~6 GB: upload every 2nd save and always at the end

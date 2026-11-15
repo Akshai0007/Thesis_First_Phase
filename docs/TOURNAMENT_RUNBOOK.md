@@ -1,5 +1,7 @@
 # Model tournament runbook (Kaggle first, then the DGX A100 80 GB)
 
+Notebooks: `kaggle/tournament_kaggle.ipynb` (section A below as cells) and `dgx/tournament_dgx.ipynb` (sections B-C as cells). DGX setup and the Hugging Face connection: `docs/DGX_SETUP.md`.
+
 Goal: pick the best architecture for Malayalam on your hardware by measuring **quality (validation bits-per-byte), speed (tokens/s, MFU),
 memory (peak GB, longest context), and stability** under identical data, tokens, batch and schedule - within about one day of DGX time.
 
