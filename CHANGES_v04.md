@@ -1,5 +1,13 @@
 # qwenlab v0.4: what changed, why, and what is still unproven
 
+## 0. Already pushed the first v0.4 to GitHub? What is new in 0.4.1
+Check your copy: `grep version pyproject.toml` shows 0.4.0 (first delivery) or 0.4.1 (this one). 0.4.1 changes only these files:
+* modified `src/qwenlab/config.py` (`train.hub_path_prefix`), `src/qwenlab/pipeline.py` (uses it), `src/qwenlab/tournament/plan.py` (`hub_repo`, `save_every` default 500, `cleanup_after_run`),
+  `src/qwenlab/tournament/runner.py` (deletes checkpoints of finished runs when asked), `configs/tournament/smoke_kaggle.json` (cleanup + 40-minute cap per run),
+  `tests/test_tournament_plan_report.py` (+4 tests), `docs/TOURNAMENT_RUNBOOK.md`, `CHANGES_v04.md`, `pyproject.toml` / `__init__.py` (version)
+* new `src/qwenlab/tournament/hub_results.py`, `scripts/upload_results.py`, `kaggle/tournament_kaggle.ipynb`, `dgx/tournament_dgx.ipynb`, `docs/DGX_SETUP.md`
+Why it matters: without `cleanup_after_run` the 9 full-size Kaggle runs would write ~6 GB of checkpoints each and overflow Kaggle's 20 GB output limit.
+
 ## 1. Audit verdict on v0.3 (from reading every file)
 
 **Already good and untouched:** strict typed config with overrides; registries for tokenizer / source / normalizer / init / schedule / task;
